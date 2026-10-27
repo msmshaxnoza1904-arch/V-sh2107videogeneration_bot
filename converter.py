@@ -14,11 +14,16 @@ os.makedirs(CONVERT_DIR, exist_ok=True)
 
 def get_ffmpeg_path() -> str:
     """
-    Tizimdan yoki WinGet o'rnatgan manzildan ffmpeg.exe ni qidiradi.
+    Tizimdan, bin papkasidan yoki WinGet o'rnatgan manzildan ffmpeg ni qidiradi.
     """
     path = shutil.which("ffmpeg")
     if path:
         return path
+
+    # Render yoki Linux muhitida lokal bin papkasi
+    local_bin = os.path.join(os.getcwd(), "bin", "ffmpeg")
+    if os.path.exists(local_bin):
+        return local_bin
 
     local_app_data = os.environ.get("LOCALAPPDATA", "")
     winget_packages = os.path.join(local_app_data, "Microsoft", "WinGet", "Packages")
