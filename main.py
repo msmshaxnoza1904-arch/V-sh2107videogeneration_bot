@@ -351,6 +351,12 @@ async def handle_conversion_callback(callback: CallbackQuery, bot: Bot):
 
         out_file = FSInputFile(converted_path)
         caption = f"✅ <b>Format o'zgartirildi:</b> <code>{os.path.basename(converted_path)}</code>"
+        if target_fmt == "docx":
+            caption += (
+                "\n\n📝 <b>Word fayl tayyor!</b>\n"
+                "💡 <i>Eslatma: Agar kompyuteringizda Word ochganda tepada sariq qatorda 'Защищенный просмотр' (Protected View) "
+                "chiqsa, tahrirlash uchun 'Разрешить редактирование' (Enable Editing) tugmasini bosing.</i>"
+            )
 
         # Formatga qarab mos turda yuborish
         if target_fmt in ("mp3", "wav", "m4a", "aac", "flac"):

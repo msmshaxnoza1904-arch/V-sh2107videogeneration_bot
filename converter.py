@@ -118,15 +118,70 @@ def get_available_formats(file_name: str) -> tuple[str | None, list[str]]:
 
 def _convert_pdf_to_docx(input_path: str, output_path: str):
     """
-    PDF faylini Word (DOCX) ga o'giradi.
-    Jadvallar, matnlar va rasmlar joylashuvini yuqori aniqlikda saqlaydi.
+    PDF faylini erkin tahrirlanadigan Word (DOCX) ga o'giradi.
+    - parse_stream_table=False: matnlar sun'iy 40+ ustunli jadvallarga aylanib bloklanib qolishini oldini oladi.
+    - Haqiqiy chiziqli jadvallar (parse_lattice_table=True) saqlanadi.
+    - Agar pdf2docx da xatolik bo'lsa, zaxira (PyMuPDF -> python-docx) orqali 100% tahrirlanuvchi qilib o'giriladi.
     """
-    from pdf2docx import Converter
-    cv = Converter(input_path)
+    success = False
     try:
-        cv.convert(output_path, start=0, end=None)
-    finally:
-        cv.close()
+        from pdf2docx import Converter
+        cv = Converter(input_path)
+        try:
+            cv.convert(
+                output_path,
+                start=0,
+                end=None,
+                parse_stream_table=False,
+                parse_lattice_table=True
+            )
+            if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                success = True
+        finally:
+            cv.close()
+    except Exception as e:
+        logger.warning(f"pdf2docx orqali o'girishda muammo bo'ldi: {e}")
+
+    # Agar pdf2docx ishlamasa yoki bo'sh fayl chiqarsa, zaxira usuli
+    if not success or not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
+        logger.info("PyMuPDF va python-docx orqali toza erkin tahrirlanuvchi DOCX yaratilmoqda...")
+        _convert_pdf_to_docx_fallback(input_path, output_path)
+
+
+def _convert_pdf_to_docx_fallback(input_path: str, output_path: str):
+    """
+    PyMuPDF va python-docx orqali toza, erkin tahrirlanadigan Word hujjati yaratish.
+    """
+    import pymupdf
+    import docx
+    from docx.shared import Pt, Cm
+
+    doc = pymupdf.open(input_path)
+    word_doc = docx.Document()
+
+    # Standart chet qoldirish (2 sm)
+    for section in word_doc.sections:
+        section.top_margin = Cm(2)
+        section.bottom_margin = Cm(2)
+        section.left_margin = Cm(2)
+        section.right_margin = Cm(2)
+
+    for page_idx, page in enumerate(doc):
+        blocks = page.get_text("blocks")
+        has_text = False
+        for b in blocks:
+            if b[6] == 0:  # Matn bloki
+                text = b[4].strip()
+                if text:
+                    p = word_doc.add_paragraph(text)
+                    p.paragraph_format.space_after = Pt(6)
+                    p.paragraph_format.line_spacing = 1.15
+                    has_text = True
+
+        if page_idx < len(doc) - 1:
+            word_doc.add_page_break()
+
+    word_doc.save(output_path)
 
 
 def _convert_pdf_to_xlsx(input_path: str, output_path: str):
