@@ -1,5 +1,6 @@
 import os
 import re
+import html
 import uuid
 import asyncio
 import logging
@@ -160,7 +161,7 @@ async def handle_instagram_link(message: Message, bot: Bot):
         bot_user = await bot.get_me()
 
         caption = (
-            f"🎬 <b>{video_data['title']}</b>\n\n"
+            f"🎬 <b>{html.escape(video_data['title'])}</b>\n\n"
             f"🤖 @{bot_user.username} orqali yuklandi"
         )
 
@@ -177,7 +178,7 @@ async def handle_instagram_link(message: Message, bot: Bot):
         await status_msg.delete()
 
     except ValueError as ve:
-        await status_msg.edit_text(f"❌ <b>Xatolik:</b> {str(ve)}", parse_mode=ParseMode.HTML)
+        await status_msg.edit_text(f"❌ <b>Xatolik:</b> {html.escape(str(ve))}", parse_mode=ParseMode.HTML)
     except Exception as e:
         logger.exception("Kutilmagan xatolik:")
         await status_msg.edit_text(
@@ -262,7 +263,7 @@ async def offer_conversion(message: Message, file_id: str, file_name: str, file_
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
 
     await message.reply(
-        f"📁 <b>Fayl:</b> <code>{file_name}</code>\n"
+        f"📁 <b>Fayl:</b> <code>{html.escape(file_name)}</code>\n"
         f"🎯 <b>Qaysi formatga o'zgartirmoqchisiz?</b> Quyidagilardan birini tanlang:",
         reply_markup=keyboard,
         parse_mode=ParseMode.HTML
@@ -350,7 +351,7 @@ async def handle_conversion_callback(callback: CallbackQuery, bot: Bot):
         await status_msg.edit_text("📤 <b>Tayyor! Fayl yuborilmoqda...</b>", parse_mode=ParseMode.HTML)
 
         out_file = FSInputFile(converted_path)
-        caption = f"✅ <b>Format o'zgartirildi:</b> <code>{os.path.basename(converted_path)}</code>"
+        caption = f"✅ <b>Format o'zgartirildi:</b> <code>{html.escape(os.path.basename(converted_path))}</code>"
         if target_fmt == "docx":
             caption += (
                 "\n\n📝 <b>Word fayl tayyor!</b>\n"
@@ -374,11 +375,11 @@ async def handle_conversion_callback(callback: CallbackQuery, bot: Bot):
         await status_msg.delete()
 
     except ValueError as ve:
-        await status_msg.edit_text(f"❌ <b>Xatolik:</b> {str(ve)}", parse_mode=ParseMode.HTML)
+        await status_msg.edit_text(f"❌ <b>Xatolik:</b> {html.escape(str(ve))}", parse_mode=ParseMode.HTML)
     except Exception as e:
         logger.exception("Konvertatsiyada xatolik:")
         await status_msg.edit_text(
-            f"❌ <b>Konvertatsiya amalga oshmadi.</b>\nSabab: {str(e)[:100]}",
+            f"❌ <b>Konvertatsiya amalga oshmadi.</b>\nSabab: {html.escape(str(e)[:100])}",
             parse_mode=ParseMode.HTML
         )
     finally:

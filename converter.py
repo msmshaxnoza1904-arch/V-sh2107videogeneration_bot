@@ -178,6 +178,11 @@ def _convert_pdf_to_docx_fallback(input_path: str, output_path: str):
                     p.paragraph_format.line_spacing = 1.15
                     has_text = True
 
+        if not has_text:
+            for line in _ocr_page(page).split("\n\n"):
+                if line.strip():
+                    word_doc.add_paragraph(line.strip())
+
         if page_idx < len(doc) - 1:
             word_doc.add_page_break()
 
@@ -267,6 +272,114 @@ def _convert_office_to_pdf(input_path: str, target_dir: str) -> str:
     raise FileNotFoundError("PDF fayli yaratilmadi.")
 
 
+def _convert_with_soffice(input_path: str, target_dir: str, target_format: str) -> str:
+    """
+    LibreOffice orqali faylni istalgan formatga o'giradi (masalan, DOC -> TXT, XLS -> CSV).
+    """
+    soffice_bin = get_soffice_path()
+    cmd = [soffice_bin, "--headless", "--convert-to", target_format, input_path, "--outdir", target_dir]
+    logger.info(f"LibreOffice konvertatsiya qilmoqda: {' '.join(cmd)}")
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        logger.error(f"LibreOffice xatosi: {result.stderr}")
+        raise ValueError("Hujjatni ushbu formatga o'zgartirib bo'lmadi.")
+
+    ext = target_format.split(":")[0]
+    candidates = [os.path.join(target_dir, f) for f in os.listdir(target_dir) if f.lower().endswith(f".{ext}")]
+    if not candidates:
+        raise FileNotFoundError("Natijaviy fayl yaratilmadi.")
+    return max(candidates, key=os.path.getctime)
+
+
+def _convert_docx_to_txt(input_path: str, output_path: str):
+    """
+    Word (DOCX) faylidagi matn va jadvallarni TXT ga ko'chiradi.
+    """
+    import docx
+    document = docx.Document(input_path)
+    lines = [p.text for p in document.paragraphs]
+    for table in document.tables:
+        lines.append("")
+        for row in table.rows:
+            lines.append("\t".join(cell.text for cell in row.cells))
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
+
+def _convert_xlsx_to_csv(input_path: str, output_path: str):
+    """
+    Excel (XLSX) faylining barcha varaqlarini CSV ga o'giradi (Excel uchun UTF-8 BOM bilan).
+    """
+    import csv
+    from openpyxl import load_workbook
+
+    wb = load_workbook(input_path, read_only=True, data_only=True)
+    with open(output_path, "w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.writer(f)
+        for sheet_idx, ws in enumerate(wb.worksheets):
+            if len(wb.worksheets) > 1:
+                if sheet_idx > 0:
+                    writer.writerow([])
+                writer.writerow([f"--- {ws.title} ---"])
+            for row in ws.iter_rows(values_only=True):
+                writer.writerow(["" if v is None else v for v in row])
+    wb.close()
+
+
+def _read_text_file(input_path: str) -> str:
+    for enc in ("utf-8-sig", "cp1251", "latin-1"):
+        try:
+            with open(input_path, "r", encoding=enc) as f:
+                return f.read()
+        except UnicodeDecodeError:
+            continue
+    return ""
+
+
+def _convert_text_to_docx(input_path: str, output_path: str):
+    """
+    TXT yoki CSV faylini tahrirlanadigan Word (DOCX) ga o'giradi. CSV jadval ko'rinishida joylanadi.
+    """
+    import csv
+    import io
+    import docx
+
+    content = _read_text_file(input_path)
+    word_doc = docx.Document()
+
+    if input_path.lower().endswith(".csv"):
+        rows = [r for r in csv.reader(io.StringIO(content)) if r]
+        if rows:
+            cols = max(len(r) for r in rows)
+            table = word_doc.add_table(rows=0, cols=cols)
+            table.style = "Table Grid"
+            for r in rows:
+                cells = table.add_row().cells
+                for i, value in enumerate(r):
+                    cells[i].text = value
+    else:
+        for line in content.splitlines():
+            word_doc.add_paragraph(line)
+
+    word_doc.save(output_path)
+
+
+def _ocr_page(page) -> str:
+    """
+    Skanerlangan (matnsiz) PDF sahifasini Tesseract OCR orqali o'qiydi. Tesseract bo'lmasa bo'sh qaytaradi.
+    """
+    try:
+        import io
+        import pytesseract
+        pix = page.get_pixmap(dpi=300)
+        img = Image.open(io.BytesIO(pix.tobytes("png")))
+        return pytesseract.image_to_string(img, lang="uzb+rus+eng")
+    except Exception as e:
+        logger.warning(f"OCR ishlamadi: {e}")
+        return ""
+
+
 def _convert_pdf_to_jpg(input_path: str, output_path: str):
     """
     PDF faylining birinchi sahifasini JPG rasmiga aylantiradi.
@@ -289,7 +402,10 @@ def _convert_pdf_to_txt(input_path: str, output_path: str):
     doc = pymupdf.open(input_path)
     full_text = []
     for page in doc:
-        full_text.append(page.get_text())
+        text = page.get_text()
+        if not text.strip():
+            text = _ocr_page(page)
+        full_text.append(text)
     doc.close()
 
     with open(output_path, "w", encoding="utf-8") as f:
@@ -343,6 +459,30 @@ def _convert_sync(input_path: str, target_format: str) -> str:
         finally:
             if os.path.exists(temp_dir):
                 shutil.rmtree(temp_dir, ignore_errors=True)
+
+    if in_ext == "docx" and target_format == "txt":
+        _convert_docx_to_txt(input_path, output_path)
+        return output_path
+
+    if in_ext == "xlsx" and target_format == "csv":
+        _convert_xlsx_to_csv(input_path, output_path)
+        return output_path
+
+    if in_ext in ("txt", "csv") and target_format == "docx":
+        _convert_text_to_docx(input_path, output_path)
+        return output_path
+
+    if (in_ext == "doc" and target_format == "txt") or (in_ext == "xls" and target_format == "csv"):
+        # Eski formatlar uchun LibreOffice
+        soffice_fmt = "txt:Text (encoded):UTF8" if target_format == "txt" else "csv:Text - txt - csv (StarCalc):44,34,76"
+        temp_dir = os.path.join(CONVERT_DIR, f"odf_{out_id}")
+        os.makedirs(temp_dir, exist_ok=True)
+        try:
+            result_path = _convert_with_soffice(input_path, temp_dir, soffice_fmt)
+            shutil.move(result_path, output_path)
+            return output_path
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
     # -------------------------------------------------------------
     # 2. Rasmlar (Pillow orqali)
