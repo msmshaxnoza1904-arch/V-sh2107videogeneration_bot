@@ -42,3 +42,12 @@ python main.py
    - `BOT_TOKEN`: Telegram bot tokeningiz.
 6. **Create Web Service** tugmasini bosing!
 7. Bot o'chib qolmasligi uchun [UptimeRobot](https://uptimerobot.com) da bepul monitor yaratib, Render bergan linkni (`https://<bot-nomi>.onrender.com/health`) har 10-15 daqiqada tekshirib turishga qo'yishingiz mumkin.
+
+### 🚂 Railway.app da ishga tushirish (24/7):
+1. [Railway](https://railway.com) ga GitHub orqali kiring.
+2. **New Project → Deploy from GitHub repo** → `V-sh2107videogeneration_bot` ni tanlang.
+3. Railway `railway.json` va `Dockerfile` ni avtomatik ishlatadi (FFmpeg, LibreOffice, Tesseract o'rnatiladi).
+4. **Variables** bo'limida `BOT_TOKEN` ni kiriting (ixtiyoriy: `INSTAGRAM_COOKIES`).
+5. Bot to'xtab qolsa, Railway uni avtomatik qayta ishga tushiradi (`restartPolicyType: ALWAYS`).
+
+⚠️ Bitta token bilan bot faqat **bitta** joyda ishlashi mumkin. Railway'da ishga tushirgach, Render yoki lokal nusxani o'chiring.
